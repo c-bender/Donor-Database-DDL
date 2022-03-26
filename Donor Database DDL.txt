@@ -1,0 +1,237 @@
+/*
+ TITLE: DONOR DATABASE PROJECT
+AUTHOR: C.BENDER
+
+
+Comments: See ERD for table relationships. Below DDL includes all tables plus a sequence for generating primary keys. Also included are an additional index and two views to aid querying.
+
+
+
+*/
+
+
+--ddl statements to drop all objects at the end of testing
+/*
+drop view  donor_primary_phone;
+drop view  donor_primary_address;
+drop table donor_phone;
+drop table phone;
+drop table phone_type;
+drop table donor_address;
+drop table address;
+drop table state;
+drop table address_type;
+drop table donation;
+drop table donation_type;
+drop table donor;
+drop table ethnicity;
+drop sequence pk_generator;
+*/
+
+
+--sequence to generate primary keys
+create sequence pk_generator increment by 1 start with 100000;
+
+--validation table for ethnicities with English labels
+create table ethnicity 
+(
+ethnicity_id        number              primary key,
+ethnicity_type      varchar2(100)       not null,
+record_created      date                not null
+);
+
+
+--information about each donor. One row per donor.
+create table donor
+(
+donor_id            number              primary key,
+donor_first_name    varchar2(100)       not null,
+donor_last_name     varchar2(100)       not null,
+donor_ssn           varchar2(100)       not null, --varchar column in anticipation of hashes, not plaintext SSNs
+ethnicity_id        number              not null, --ethnicity_vtl will contain a type for "Chose not to disclose" rather than allowing nulls here
+donor_birth_date    date,
+record_created      date                not null,
+
+constraint ethnicity_id_fk
+           foreign key (ethnicity_id)
+           references ethnicity (ethnicity_id)
+
+);
+
+
+--validation table for donation type with English labels
+create table donation_type 
+(
+donation_type_id        number              primary key,
+donation_type           varchar2(100)       not null,
+record_created          date                not null
+);
+
+
+--table for donation information. One row per donation.
+create table donation
+(
+donation_id         number              primary key,
+donor_id            number              not null,
+donation_type_id    number              not null,
+donation_date       date                not null,
+donation_amount     number(38,2)        not null,
+donation_memo       blob,
+record_created      date                not null,
+
+constraint donor_id_fk
+           foreign key (donor_id)
+           references donor (donor_id),
+           
+constraint donation_type_id_fk
+           foreign key (donation_type_id)
+           references donation_type (donation_type_id)
+
+);
+
+
+--most likely queries involve specific donors for a given date or date range
+create index donor_date_NDX
+on donation (donor_id, donation_date);
+
+
+--address type validation table with English labels
+create table address_type 
+(
+address_type_id        number               primary key,
+address_type           varchar2(100)        not null,
+record_created         date                 not null
+);
+
+
+--validation table to limit addresses only to states / territories that exist
+create table state
+(
+state_id               number               primary key,
+state_code             varchar2(100)        not null,
+state_name             varchar2(100)        not null,
+record_created         date                 not null
+);
+
+
+--one row per address
+create table address
+(
+address_id          number              primary key,
+address_line_1      varchar2(100)       not null,           --typically house number and street name
+address_line_2      varchar2(100),                          --secondary line for complex addresses
+address_line_3      varchar2(100),                          --tertiary line for complex addresses
+city                varchar2(100)       not null,
+state_id            number              not null,
+zip_code            number              not null,
+record_created      date                not null,
+
+constraint state_id_fk
+           foreign key (state_id)
+           references state (state_id)
+
+);
+
+
+--full table of all donor addresses
+create table donor_address
+(
+
+donor_address_id    number              primary key,
+donor_id            number              not null,
+address_type_id     number              not null,
+address_id          number              not null,
+current_address     number(1)           not null, --is the address currently used by donor
+primary_address     number(1)           not null, --is this the primary (default) address for the donor
+record_created      date                not null,
+
+constraint donor_id2_fk
+           foreign key (donor_id)
+           references donor (donor_id),
+
+constraint address_type_id_fk
+           foreign key (address_type_id)
+           references address_type (address_type_id),
+           
+constraint address_id_fk
+           foreign key (address_id)
+           references address (address_id)
+
+);
+
+
+--create view that only includes primary / default addresses for easier queries
+create view donor_primary_address
+as
+(
+select donor_address_id,
+       donor_id,
+       address_type_id,
+       address_id,
+       record_created
+  from donor_address
+ where current_address = 1
+   and primary_address = 1
+);
+
+
+--phone type validation table with English labels
+create table phone_type 
+(
+phone_type_id        number               primary key,
+phone_type           varchar2(100)        not null,
+record_created       date                 not null
+);
+
+
+--all phone numbers
+create table phone
+(
+phone_id            number              primary key,
+area_code           number              not null,
+phone_number        number              not null,
+phone_ext           number,
+record_created      date                not null
+);
+
+
+--donor phone numbers
+create table donor_phone
+(
+
+donor_phone_id      number              primary key,
+donor_id            number              not null,
+phone_type_id       number              not null,
+phone_id            number              not null,
+current_phone       number(1)           not null, --is this a current phone used by the donor
+primary_phone       number(1)           not null, --is this the primary (default) phone for the donor
+record_created      date                not null,
+
+constraint donor_id3_fk
+           foreign key (donor_id)
+           references donor (donor_id),
+
+constraint phone_type_id_fk
+           foreign key (phone_type_id)
+           references phone_type (phone_type_id),
+           
+constraint phone_id_fk
+           foreign key (phone_id)
+           references phone (phone_id)
+
+);
+
+
+--create view that only includes primary / default phones for easier queries
+create view donor_primary_phone
+as
+(
+select donor_phone_id,
+       donor_id,
+       phone_type_id,
+       phone_id,
+       record_created
+  from donor_phone
+ where current_phone = 1
+   and primary_phone = 1
+);
